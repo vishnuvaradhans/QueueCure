@@ -38,6 +38,11 @@ export default function RegisterPage() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [fullName, setFullName] = useState("");
+  const [dateOfBirth, setDateOfBirth] = useState("");
+  const [gender, setGender] = useState("Male");
+  const [phoneNumber, setPhoneNumber] = useState("");
+  const [address, setAddress] = useState("");
   const [passwordVisible, setPasswordVisible] = useState(false);
   const [confirmPasswordVisible, setConfirmPasswordVisible] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -65,10 +70,21 @@ export default function RegisterPage() {
       return;
     }
 
+    if (!fullName.trim() || !dateOfBirth || !phoneNumber.trim() || !address.trim()) {
+      setMessage("Full name, DOB, phone number, and address are required.");
+      return;
+    }
+
     setIsSubmitting(true);
 
     try {
-      await registerPatient(username, password, confirmPassword);
+      await registerPatient(username, password, confirmPassword, {
+        fullName,
+        dateOfBirth,
+        gender,
+        phoneNumber,
+        address,
+      });
       navigate("/", {
         replace: true,
         state: { registrationMessage: "Patient account created. Please log in." },
@@ -127,6 +143,64 @@ export default function RegisterPage() {
                   {usernameError}
                 </p>
               )}
+
+              <div className="grid gap-3 sm:grid-cols-2">
+                <label className="block sm:col-span-2">
+                  <span className="mb-2 block text-sm font-semibold text-slate-700">
+                    Full Name
+                  </span>
+                  <input
+                    value={fullName}
+                    onChange={(event) => setFullName(event.target.value)}
+                    className="h-12 w-full rounded-xl border border-slate-200 bg-white px-4 text-base text-slate-900 outline-none transition duration-200 placeholder:text-slate-400 hover:border-slate-300 focus:border-clinic-blue focus:ring-4 focus:ring-blue-100"
+                  />
+                </label>
+                <label className="block">
+                  <span className="mb-2 block text-sm font-semibold text-slate-700">
+                    Date of Birth
+                  </span>
+                  <input
+                    type="date"
+                    value={dateOfBirth}
+                    onChange={(event) => setDateOfBirth(event.target.value)}
+                    className="h-12 w-full rounded-xl border border-slate-200 bg-white px-4 text-base text-slate-900 outline-none transition duration-200 hover:border-slate-300 focus:border-clinic-blue focus:ring-4 focus:ring-blue-100"
+                  />
+                </label>
+                <label className="block">
+                  <span className="mb-2 block text-sm font-semibold text-slate-700">
+                    Gender
+                  </span>
+                  <select
+                    value={gender}
+                    onChange={(event) => setGender(event.target.value)}
+                    className="h-12 w-full rounded-xl border border-slate-200 bg-white px-4 text-base text-slate-900 outline-none transition duration-200 hover:border-slate-300 focus:border-clinic-blue focus:ring-4 focus:ring-blue-100"
+                  >
+                    <option>Male</option>
+                    <option>Female</option>
+                    <option>Other</option>
+                  </select>
+                </label>
+                <label className="block sm:col-span-2">
+                  <span className="mb-2 block text-sm font-semibold text-slate-700">
+                    Phone Number
+                  </span>
+                  <input
+                    value={phoneNumber}
+                    onChange={(event) => setPhoneNumber(event.target.value)}
+                    className="h-12 w-full rounded-xl border border-slate-200 bg-white px-4 text-base text-slate-900 outline-none transition duration-200 placeholder:text-slate-400 hover:border-slate-300 focus:border-clinic-blue focus:ring-4 focus:ring-blue-100"
+                  />
+                </label>
+                <label className="block sm:col-span-2">
+                  <span className="mb-2 block text-sm font-semibold text-slate-700">
+                    Address
+                  </span>
+                  <textarea
+                    value={address}
+                    onChange={(event) => setAddress(event.target.value)}
+                    className="min-h-20 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-base text-slate-900 outline-none transition duration-200 hover:border-slate-300 focus:border-clinic-blue focus:ring-4 focus:ring-blue-100"
+                  />
+                </label>
+              </div>
 
               <PasswordInput
                 value={password}

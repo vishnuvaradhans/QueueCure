@@ -6,16 +6,28 @@ export type QueueStatus =
   | "COMPLETED"
   | "CANCELLED";
 
-export type PaymentMethod = "CASH" | "UPI";
-export type PaymentStatus = "PENDING" | "PAID" | "FAILED";
+export type PaymentMethod = "CASH";
+export type PaymentStatus = "PENDING" | "PAID";
 export type Gender = "Male" | "Female" | "Other";
+export type VisitCategory =
+  | "General Fever / Cold"
+  | "Diabetes Follow-up"
+  | "Blood Pressure Check"
+  | "Skin Problem"
+  | "Child Consultation"
+  | "Prescription Refill"
+  | "Vaccination"
+  | "First Consultation"
+  | "Other";
 
 export type QueueEntry = {
   id: number;
   queue_date: string;
   token_number: number;
   patient_id: number;
-  reason_for_visit: string;
+  reason_for_visit?: string;
+  visit_category?: VisitCategory;
+  medical_notes?: string | null;
   status: QueueStatus;
   estimated_wait_minutes: number;
   full_name: string;
@@ -24,7 +36,6 @@ export type QueueEntry = {
   amount: number | null;
   payment_method: PaymentMethod | null;
   payment_status: PaymentStatus | null;
-  transaction_id: string | null;
 };
 
 export type QueueSummary = {
@@ -53,6 +64,8 @@ export type PatientIntakePayload = {
   insuranceProvider?: string;
   policyNumber?: string;
   reasonForVisit: string;
+  visitCategory: VisitCategory;
+  medicalNotes?: string;
   appointmentDate?: string;
   appointmentTime?: string;
   paymentMethod: PaymentMethod;
@@ -60,22 +73,6 @@ export type PatientIntakePayload = {
   billingAddressSame: boolean;
   billingAddress?: string;
   patientUsername?: string;
-};
-
-export type PaymentQrPayload = {
-  payment: {
-    id: number;
-    queue_entry_id: number;
-    patient_id: number;
-    token_number: number;
-    amount: number;
-    payment_method: PaymentMethod;
-    payment_status: PaymentStatus;
-    transaction_id: string | null;
-    full_name: string;
-  };
-  upiUri: string;
-  qrCodeDataUrl: string;
 };
 
 export type FullPatientPayload = {
@@ -102,5 +99,17 @@ export type FullPatientPayload = {
     appointment_date: string;
     appointment_time: string;
     reason_for_visit: string;
+  };
+};
+
+export type PatientProfileLookup = {
+  patientId: string;
+  patient: {
+    id: number;
+    fullName: string;
+    dateOfBirth: string;
+    gender: Gender;
+    phoneNumber: string;
+    address: string;
   };
 };

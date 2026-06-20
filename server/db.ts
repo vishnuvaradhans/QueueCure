@@ -26,6 +26,7 @@ db.exec("PRAGMA foreign_keys = ON;");
 export function runMigrations() {
   const schema = readFileSync(join(serverDir, "schema.sql"), "utf8");
   db.exec(schema);
+  applyPhase4Migrations();
 }
 
 export function findUserByUsername(username: string): UserRecord | undefined {
@@ -73,5 +74,69 @@ export function runTransaction<T>(operation: () => T) {
   } catch (error) {
     db.exec("ROLLBACK");
     throw error;
+  }
+}
+
+function columnExists(tableName: string, columnName: string) {
+  const columns = db.prepare(`PRAGMA table_info(${tableName})`).all() as Array<{
+    name: string;
+  }>;
+
+  return columns.some((column) => column.name === columnName);
+}
+
+function addColumnIfMissing(tableName: string, columnName: string, definition: string) {
+  if (!columnExists(tableName, columnName)) {
+    db.exec(`ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${definition}`);
+  }
+}
+
+function applyPhase4Migrations() {
+  addColumnIfMissing("queue_entries", "visit_category", "TEXT NOT NULL DEFAULT 'Other'");
+  addColumnIfMissing("queue_entries", "medical_notes", "TEXT");
+  addColumnIfMissing("queue_entries", "consultation_started_at", "TEXT");
+  addColumnIfMissing("queue_entries", "consultation_ended_at", "TEXT");
+
+  addColumnIfMissing("payments", "marked_paid_at", "TEXT");
+  db.exec(`
+    UPDATE patients SET payment_method = 'CASH' WHERE payment_method != 'CASH';
+    UPDATE payments SET payment_method = 'CASH' WHERE payment_method != 'CASH';
+    UPDATE payments SET payment_status = 'PENDING' WHERE payment_status NOT IN ('PENDING', 'PAID');
+  `);
+
+  if (columnExists("payments", "transaction_id")) {
+    db.exec(`
+      CREATE TABLE payments_phase4 (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        queue_entry_id INTEGER NOT NULL UNIQUE,
+        patient_id INTEGER NOT NULL,
+        token_number INTEGER NOT NULL,
+        amount INTEGER NOT NULL,
+        payment_method TEXT NOT NULL CHECK (payment_method IN ('CASH')) DEFAULT 'CASH',
+        payment_status TEXT NOT NULL CHECK (payment_status IN ('PENDING', 'PAID')) DEFAULT 'PENDING',
+        marked_paid_at TEXT,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (queue_entry_id) REFERENCES queue_entries(id) ON DELETE CASCADE,
+        FOREIGN KEY (patient_id) REFERENCES patients(id) ON DELETE CASCADE
+      );
+
+      INSERT INTO payments_phase4 (
+        id, queue_entry_id, patient_id, token_number, amount, payment_method,
+        payment_status, marked_paid_at, created_at, updated_at
+      )
+      SELECT
+        id, queue_entry_id, patient_id, token_number, amount, 'CASH',
+        CASE WHEN payment_status = 'PAID' THEN 'PAID' ELSE 'PENDING' END,
+        marked_paid_at, created_at, updated_at
+      FROM payments;
+
+      DROP TABLE payments;
+      ALTER TABLE payments_phase4 RENAME TO payments;
+
+      CREATE INDEX IF NOT EXISTS idx_payments_patient_id ON payments(patient_id);
+      CREATE INDEX IF NOT EXISTS idx_payments_queue_entry_id ON payments(queue_entry_id);
+      CREATE INDEX IF NOT EXISTS idx_payments_status ON payments(payment_status);
+    `);
   }
 }

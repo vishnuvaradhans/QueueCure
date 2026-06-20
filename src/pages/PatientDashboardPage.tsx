@@ -29,6 +29,7 @@ export default function PatientDashboardPage() {
       patientsAhead: 0,
       estimatedWaitMinutes: 0,
       progress: 0,
+      averageConsultationMinutes: 10
     },
   });
   const [notifications, setNotifications] = useState<string[]>([]);
@@ -82,8 +83,10 @@ export default function PatientDashboardPage() {
           ownEntry,
           summary: {
             currentToken: current?.token_number ?? null,
+            
             patientsAhead,
             estimatedWaitMinutes: ownEntry?.estimated_wait_minutes ?? 0,
+            averageConsultationMinutes: 10,
             progress: ownEntry
               ? Math.min(100, Math.round((completedBefore / Math.max(ownEntry.token_number, 1)) * 100))
               : 0,
@@ -234,10 +237,10 @@ export default function PatientDashboardPage() {
                   }`}
                 >
                   <p className="text-2xl font-black text-clinic-navy">#{entry.token_number}</p>
-                  <div>
-                    <p className="font-bold text-clinic-navy">{entry.full_name}</p>
-                    <p className="text-sm text-slate-500">{entry.reason_for_visit}</p>
-                  </div>
+              <div>
+                <p className="font-bold text-clinic-navy">{entry.full_name}</p>
+                    <p className="text-sm text-slate-500">Estimated wait: {entry.estimated_wait_minutes} min</p>
+              </div>
                   <span className="rounded-full bg-white px-3 py-1 text-xs font-bold text-slate-600 ring-1 ring-slate-200">
                     {statusText(entry.status)}
                   </span>
@@ -281,8 +284,16 @@ export default function PatientDashboardPage() {
                 <span className="font-bold text-clinic-navy">{ownEntry?.full_name ?? "Not linked"}</span>
               </p>
               <p className="flex justify-between gap-4">
-                <span className="text-slate-500">Reason</span>
-                <span className="font-bold text-clinic-navy">{ownEntry?.reason_for_visit ?? "--"}</span>
+                <span className="text-slate-500">Payment Status</span>
+                <span
+                  className={`rounded-full px-3 py-1 text-xs font-bold ${
+                    ownEntry?.payment_status === "PAID"
+                      ? "bg-emerald-50 text-clinic-green"
+                      : "bg-amber-50 text-amber-700"
+                  }`}
+                >
+                  {ownEntry?.payment_status === "PAID" ? "Paid" : "Pending"}
+                </span>
               </p>
             </div>
           </div>

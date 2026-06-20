@@ -1,7 +1,6 @@
 import cors from "cors";
 import express from "express";
 import { createServer } from "node:http";
-import QRCode from "qrcode";
 import {
   authResponse,
   authenticate,
@@ -27,12 +26,13 @@ import {
   callQueueEntry,
   cancelQueueEntry,
   completeQueueEntry,
-  confirmQueuePayment,
+  createPatientProfileForUser,
   createQueueEntry,
   getFullPatientForQueue,
-  getPaymentForQueue,
+  getPatientProfileByPatientId,
   getPatientQueue,
   listQueue,
+  markQueuePaymentPaid,
   updatePatientForQueue,
 } from "./queue";
 import { broadcastQueueUpdate, notifyPatient, setupRealtime } from "./realtime";
@@ -40,8 +40,6 @@ import { broadcastQueueUpdate, notifyPatient, setupRealtime } from "./realtime";
 const app = express();
 const port = Number(process.env.PORT ?? 4000);
 const server = createServer(app);
-const clinicUpiId = process.env.CLINIC_UPI_ID ?? "clinic@upi";
-const clinicUpiName = process.env.CLINIC_UPI_NAME ?? "QueueCureClinic";
 
 runMigrations();
 setupRealtime(server);
@@ -77,6 +75,16 @@ app.post("/api/auth/register", async (request, response) => {
       role: "PATIENT",
       passwordHash: await hashPassword(password),
     });
+
+    if (user && request.body.fullName) {
+      createPatientProfileForUser(user.id, {
+        fullName: request.body.fullName,
+        dateOfBirth: request.body.dateOfBirth,
+        gender: request.body.gender,
+        phoneNumber: request.body.phoneNumber,
+        address: request.body.address,
+      });
+    }
 
     response.status(201).json({ user: user ? publicUser(user) : undefined });
   } catch (error) {
@@ -162,6 +170,22 @@ app.get(
   requireRoles(["OFFICIAL", "ADMIN"]),
   (_request, response) => {
     response.json({ queue: listQueue() });
+  },
+);
+
+app.get(
+  "/api/patients/:patientId",
+  authenticate,
+  requireRoles(["OFFICIAL", "ADMIN"]),
+  (request, response) => {
+    const profile = getPatientProfileByPatientId(String(request.params.patientId));
+
+    if (!profile) {
+      response.status(404).json({ message: "Patient not found. Please register patient first." });
+      return;
+    }
+
+    response.json(profile);
   },
 );
 
@@ -310,47 +334,17 @@ app.delete(
 );
 
 app.post(
-  "/api/queue/:id/payment/qr",
-  authenticate,
-  requireRoles(["OFFICIAL", "ADMIN"]),
-  async (request, response) => {
-    try {
-      const payment = getPaymentForQueue(Number(request.params.id));
-
-      if (!payment) {
-        response.status(404).json({ message: "Payment record not found." });
-        return;
-      }
-
-      const upiUri = `upi://pay?pa=${encodeURIComponent(clinicUpiId)}&pn=${encodeURIComponent(
-        clinicUpiName,
-      )}&am=${encodeURIComponent(String(payment.amount))}&cu=INR`;
-      const qrCodeDataUrl = await QRCode.toDataURL(upiUri, {
-        margin: 2,
-        width: 260,
-      });
-
-      response.json({ payment, upiUri, qrCodeDataUrl });
-    } catch (error) {
-      response.status(400).json({
-        message: error instanceof Error ? error.message : "Unable to generate QR.",
-      });
-    }
-  },
-);
-
-app.post(
-  "/api/queue/:id/payment/confirm",
+  "/api/queue/:id/payment/paid",
   authenticate,
   requireRoles(["OFFICIAL", "ADMIN"]),
   (request, response) => {
     try {
-      const entry = confirmQueuePayment(Number(request.params.id), request.body.transactionId);
+      const entry = markQueuePaymentPaid(Number(request.params.id));
       broadcastQueueUpdate("payment_confirmed");
       response.json({ entry });
     } catch (error) {
       response.status(400).json({
-        message: error instanceof Error ? error.message : "Unable to confirm payment.",
+        message: error instanceof Error ? error.message : "Unable to mark payment paid.",
       });
     }
   },

@@ -7,7 +7,7 @@ import {
   IndianRupee,
   Edit3,
   PhoneCall,
-  QrCode,
+  Search,
   Trash2,
 } from "lucide-react";
 import { useAuth } from "../auth/AuthContext";
@@ -16,15 +16,15 @@ import {
   callNextQueuePatient,
   callQueuePatient,
   completeQueuePatient,
-  confirmQueuePayment,
+  fetchPatientProfile,
   fetchOfficialQueue,
   fetchQueuePatient,
-  generatePaymentQr,
+  markQueuePaymentPaid,
   removeQueuePatient,
   updateQueuePatient,
 } from "../lib/api";
 import { getQueueSocket } from "../lib/socket";
-import type { Gender, PatientIntakePayload, PaymentMethod, PaymentQrPayload, QueueEntry } from "../types/queue";
+import type { Gender, PatientIntakePayload, QueueEntry, VisitCategory } from "../types/queue";
 
 const emptyForm: PatientIntakePayload = {
   fullName: "",
@@ -38,6 +38,8 @@ const emptyForm: PatientIntakePayload = {
   insuranceProvider: "",
   policyNumber: "",
   reasonForVisit: "",
+  visitCategory: "General Fever / Cold",
+  medicalNotes: "",
   appointmentDate: "",
   appointmentTime: "",
   paymentMethod: "CASH",
@@ -59,8 +61,19 @@ const statusStyles: Record<string, string> = {
 const paymentStyles: Record<string, string> = {
   PENDING: "bg-amber-50 text-amber-700",
   PAID: "bg-emerald-50 text-clinic-green",
-  FAILED: "bg-red-50 text-red-700",
 };
+
+const visitCategories: VisitCategory[] = [
+  "General Fever / Cold",
+  "Diabetes Follow-up",
+  "Blood Pressure Check",
+  "Skin Problem",
+  "Child Consultation",
+  "Prescription Refill",
+  "Vaccination",
+  "First Consultation",
+  "Other",
+];
 
 function inputClass() {
   return "h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-clinic-blue focus:ring-4 focus:ring-blue-100";
@@ -73,8 +86,7 @@ export default function OfficialDashboardPage() {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [message, setMessage] = useState("");
   const [isSaving, setIsSaving] = useState(false);
-  const [qrPayloads, setQrPayloads] = useState<Record<number, PaymentQrPayload>>({});
-  const [transactionIds, setTransactionIds] = useState<Record<number, string>>({});
+  const [isLookingUpPatient, setIsLookingUpPatient] = useState(false);
 
   const activeQueue = useMemo(
     () => queue.filter((entry) => !["COMPLETED", "CANCELLED"].includes(entry.status)),
@@ -117,11 +129,33 @@ export default function OfficialDashboardPage() {
     setMessage("");
 
     try {
+      if (
+        form.emergencyContactPhoneNumber.trim() &&
+        form.phoneNumber.replace(/\D/g, "") ===
+        form.emergencyContactPhoneNumber.replace(/\D/g, "")
+      ) {
+        throw new Error("Emergency contact number must be different from patient phone number.");
+      }
+
+      if (
+        !form.patientUsername?.trim() &&
+        (!form.emergencyRelationship.trim() ||
+          !form.emergencyContactName.trim() ||
+          !form.emergencyContactPhoneNumber.trim())
+      ) {
+        throw new Error("Emergency contact details are required for new patients.");
+      }
+
+      const payload = {
+        ...form,
+        reasonForVisit: form.reasonForVisit.trim() || form.visitCategory,
+      };
+
       if (editingId) {
-        await updateQueuePatient(token, editingId, form);
+        await updateQueuePatient(token, editingId, payload);
         setMessage("Patient updated.");
       } else {
-        await addQueuePatient(token, form);
+        await addQueuePatient(token, payload);
         setMessage("Patient added to queue.");
       }
 
@@ -133,6 +167,37 @@ export default function OfficialDashboardPage() {
       setMessage(error instanceof Error ? error.message : "Unable to save patient.");
     } finally {
       setIsSaving(false);
+    }
+  }
+
+  async function handlePatientLookup() {
+    if (!token || !form.patientUsername?.trim()) {
+      setMessage("Enter a Patient ID first.");
+      return;
+    }
+
+    setIsLookingUpPatient(true);
+    setMessage("");
+
+    try {
+      const profile = await fetchPatientProfile(token, form.patientUsername.trim());
+      setForm((current) => ({
+        ...current,
+        fullName: profile.patient.fullName,
+        dateOfBirth: profile.patient.dateOfBirth,
+        gender: profile.patient.gender,
+        phoneNumber: profile.patient.phoneNumber,
+        address: profile.patient.address,
+      }));
+      setMessage("Patient details loaded.");
+    } catch (error) {
+      setMessage(
+        error instanceof Error
+          ? error.message
+          : "Patient not found. Please register patient first.",
+      );
+    } finally {
+      setIsLookingUpPatient(false);
     }
   }
 
@@ -154,10 +219,12 @@ export default function OfficialDashboardPage() {
       emergencyContactPhoneNumber: details.emergencyContact?.contact_phone_number ?? "",
       insuranceProvider: details.insurance?.insurance_provider ?? "",
       policyNumber: details.insurance?.policy_number ?? "",
-      reasonForVisit: entry.reason_for_visit,
+      reasonForVisit: entry.reason_for_visit ?? "",
+      visitCategory: entry.visit_category ?? "Other",
+      medicalNotes: entry.medical_notes ?? "",
       appointmentDate: details.appointment?.appointment_date ?? "",
       appointmentTime: details.appointment?.appointment_time ?? "",
-              paymentMethod: details.patient.payment_method,
+      paymentMethod: "CASH",
       amount: entry.amount ?? 300,
       billingAddressSame: Boolean(details.patient.billing_address_same),
       billingAddress: details.patient.billing_address ?? "",
@@ -180,35 +247,13 @@ export default function OfficialDashboardPage() {
     }
   }
 
-  async function handleGenerateQr(entry: QueueEntry) {
+  async function handleMarkPaid(entry: QueueEntry) {
     if (!token) {
       return;
     }
 
-    try {
-      const payload = await generatePaymentQr(token, entry.id);
-      setQrPayloads((current) => ({ ...current, [entry.id]: payload }));
-      setMessage(`QR generated for token #${entry.token_number}.`);
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Unable to generate QR.");
-    }
-  }
-
-  async function handleConfirmPayment(entry: QueueEntry) {
-    if (!token) {
-      return;
-    }
-
-    const transactionId = (transactionIds[entry.id] ?? "").trim();
-
-    if (transactionId.length < 6) {
-      setMessage("Transaction ID must be at least 6 characters.");
-      return;
-    }
-
-    await runAction(() => confirmQueuePayment(token, entry.id, transactionId));
-    setTransactionIds((current) => ({ ...current, [entry.id]: "" }));
-    setMessage(`Payment confirmed for token #${entry.token_number}.`);
+    await runAction(() => markQueuePaymentPaid(token, entry.id));
+    setMessage(`Payment marked paid for token #${entry.token_number}.`);
   }
 
   return (
@@ -260,8 +305,19 @@ export default function OfficialDashboardPage() {
           <form className="space-y-4" onSubmit={handleSubmit}>
             <div className="grid gap-3 sm:grid-cols-2">
               <label className="block sm:col-span-2">
-                <span className="mb-1 block text-sm font-semibold text-slate-700">Registered Patient Username</span>
-                <input className={inputClass()} placeholder="optional: arun.pat" value={form.patientUsername ?? ""} onChange={(event) => updateField("patientUsername", event.target.value)} />
+                <span className="mb-1 block text-sm font-semibold text-slate-700">Patient ID</span>
+                <div className="flex gap-2">
+                  <input className={inputClass()} placeholder="arun.pat" value={form.patientUsername ?? ""} onChange={(event) => updateField("patientUsername", event.target.value)} />
+                  <button
+                    type="button"
+                    onClick={handlePatientLookup}
+                    disabled={isLookingUpPatient}
+                    className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-blue-50 text-clinic-blue transition hover:bg-blue-100 disabled:opacity-60"
+                    title="Find patient"
+                  >
+                    <Search className="h-5 w-5" aria-hidden="true" />
+                  </button>
+                </div>
               </label>
               <label className="block sm:col-span-2">
                 <span className="mb-1 block text-sm font-semibold text-slate-700">Full Name</span>
@@ -292,25 +348,31 @@ export default function OfficialDashboardPage() {
             <div className="grid gap-3 sm:grid-cols-2">
               <label className="block">
                 <span className="mb-1 block text-sm font-semibold text-slate-700">Relationship</span>
-                <input className={inputClass()} required value={form.emergencyRelationship} onChange={(event) => updateField("emergencyRelationship", event.target.value)} />
+                <input className={inputClass()} value={form.emergencyRelationship} onChange={(event) => updateField("emergencyRelationship", event.target.value)} />
               </label>
               <label className="block">
                 <span className="mb-1 block text-sm font-semibold text-slate-700">Emergency Contact Name</span>
-                <input className={inputClass()} required value={form.emergencyContactName} onChange={(event) => updateField("emergencyContactName", event.target.value)} />
+                <input className={inputClass()} value={form.emergencyContactName} onChange={(event) => updateField("emergencyContactName", event.target.value)} />
               </label>
               <label className="block sm:col-span-2">
                 <span className="mb-1 block text-sm font-semibold text-slate-700">Emergency Contact Phone Number</span>
-                <input className={inputClass()} required value={form.emergencyContactPhoneNumber} onChange={(event) => updateField("emergencyContactPhoneNumber", event.target.value)} />
+                <input className={inputClass()} value={form.emergencyContactPhoneNumber} onChange={(event) => updateField("emergencyContactPhoneNumber", event.target.value)} />
               </label>
             </div>
 
             <div className="grid gap-3 sm:grid-cols-2">
               <input className={inputClass()} placeholder="Insurance Provider" value={form.insuranceProvider ?? ""} onChange={(event) => updateField("insuranceProvider", event.target.value)} />
               <input className={inputClass()} placeholder="Policy Number" value={form.policyNumber ?? ""} onChange={(event) => updateField("policyNumber", event.target.value)} />
-              <input className={inputClass()} required placeholder="Reason For Visit" value={form.reasonForVisit} onChange={(event) => updateField("reasonForVisit", event.target.value)} />
-              <select className={inputClass()} value={form.paymentMethod} onChange={(event) => updateField("paymentMethod", event.target.value as PaymentMethod)}>
+              <input className={inputClass()} placeholder="Visit notes / reason" value={form.reasonForVisit} onChange={(event) => updateField("reasonForVisit", event.target.value)} />
+              <select className={inputClass()} value={form.visitCategory} onChange={(event) => updateField("visitCategory", event.target.value as VisitCategory)}>
+                {visitCategories.map((category) => (
+                  <option key={category} value={category}>
+                    {category}
+                  </option>
+                ))}
+              </select>
+              <select className={inputClass()} value={form.paymentMethod} onChange={() => updateField("paymentMethod", "CASH")}>
                 <option value="CASH">Cash / Pay At Clinic</option>
-                <option value="UPI">UPI / QR Payment</option>
               </select>
               <label className="relative block">
                 <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
@@ -320,6 +382,7 @@ export default function OfficialDashboardPage() {
               </label>
               <input className={inputClass()} type="date" value={form.appointmentDate ?? ""} onChange={(event) => updateField("appointmentDate", event.target.value)} />
               <input className={inputClass()} type="time" value={form.appointmentTime ?? ""} onChange={(event) => updateField("appointmentTime", event.target.value)} />
+              <textarea className="min-h-20 rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none transition focus:border-clinic-blue focus:ring-4 focus:ring-blue-100 sm:col-span-2" placeholder="Additional Notes" value={form.medicalNotes ?? ""} onChange={(event) => updateField("medicalNotes", event.target.value)} />
             </div>
 
             <label className="flex items-center gap-3 rounded-xl bg-slate-50 p-3 text-sm font-semibold text-slate-700">
@@ -331,8 +394,8 @@ export default function OfficialDashboardPage() {
               <textarea className="min-h-20 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none transition focus:border-clinic-blue focus:ring-4 focus:ring-blue-100" required placeholder="Billing Address" value={form.billingAddress ?? ""} onChange={(event) => updateField("billingAddress", event.target.value)} />
             )}
 
-            <div className="rounded-xl bg-blue-50 p-3 text-sm font-semibold text-clinic-blue">
-              UPI QR payments require receptionist transaction ID verification before status becomes paid.
+            <div className="rounded-xl bg-emerald-50 p-3 text-sm font-semibold text-clinic-green">
+              Payment is collected physically at the clinic. Mark as paid after receiving cash.
             </div>
 
             {message && <p className="text-sm font-semibold text-clinic-blue">{message}</p>}
@@ -370,6 +433,7 @@ export default function OfficialDashboardPage() {
                   <th className="px-3">Token Number</th>
                   <th className="px-3">Patient Name</th>
                   <th className="px-3">Reason For Visit</th>
+                  <th className="px-3">Category</th>
                   <th className="px-3">Status</th>
                   <th className="px-3">Estimated Wait Time</th>
                   <th className="px-3">Payment</th>
@@ -384,6 +448,7 @@ export default function OfficialDashboardPage() {
                     </td>
                     <td className="px-3 py-4 font-semibold">{entry.full_name}</td>
                     <td className="px-3 py-4 text-slate-600">{entry.reason_for_visit}</td>
+                    <td className="px-3 py-4 text-slate-600">{entry.visit_category}</td>
                     <td className="px-3 py-4">
                       <span className={`rounded-full px-3 py-1 text-xs font-bold ${statusStyles[entry.status]}`}>
                         {entry.status.replace("_", " ")}
@@ -400,62 +465,14 @@ export default function OfficialDashboardPage() {
                             Rs. {entry.amount ?? 300}
                           </span>
                         </div>
-                        {entry.payment_method === "UPI" && entry.payment_status !== "PAID" && (
+                        {entry.payment_status !== "PAID" && (
                           <div className="space-y-2">
                             <button
                               type="button"
-                              onClick={() => handleGenerateQr(entry)}
-                              className="inline-flex h-9 items-center gap-2 rounded-lg bg-blue-50 px-3 text-xs font-bold text-clinic-blue hover:bg-blue-100"
-                            >
-                              <QrCode className="h-4 w-4" aria-hidden="true" />
-                              Generate QR
-                            </button>
-                            {qrPayloads[entry.id] && (
-                              <img
-                                src={qrPayloads[entry.id].qrCodeDataUrl}
-                                alt={`UPI QR for token ${entry.token_number}`}
-                                className="h-28 w-28 rounded-lg border border-slate-200 bg-white p-1"
-                              />
-                            )}
-                            <input
-                              className="h-9 w-full rounded-lg border border-slate-200 px-3 text-xs outline-none focus:border-clinic-blue focus:ring-2 focus:ring-blue-100"
-                              placeholder="Transaction ID"
-                              value={transactionIds[entry.id] ?? ""}
-                              onChange={(event) =>
-                                setTransactionIds((current) => ({
-                                  ...current,
-                                  [entry.id]: event.target.value,
-                                }))
-                              }
-                            />
-                            <button
-                              type="button"
-                              onClick={() => handleConfirmPayment(entry)}
+                              onClick={() => handleMarkPaid(entry)}
                               className="h-9 rounded-lg bg-clinic-green px-3 text-xs font-bold text-white hover:bg-emerald-700"
                             >
-                              Confirm Payment
-                            </button>
-                          </div>
-                        )}
-                        {entry.payment_method === "CASH" && entry.payment_status !== "PAID" && (
-                          <div className="space-y-2">
-                            <input
-                              className="h-9 w-full rounded-lg border border-slate-200 px-3 text-xs outline-none focus:border-clinic-blue focus:ring-2 focus:ring-blue-100"
-                              placeholder="Receipt / transaction ID"
-                              value={transactionIds[entry.id] ?? ""}
-                              onChange={(event) =>
-                                setTransactionIds((current) => ({
-                                  ...current,
-                                  [entry.id]: event.target.value,
-                                }))
-                              }
-                            />
-                            <button
-                              type="button"
-                              onClick={() => handleConfirmPayment(entry)}
-                              className="h-9 rounded-lg bg-clinic-green px-3 text-xs font-bold text-white hover:bg-emerald-700"
-                            >
-                              Confirm Payment
+                              Mark Paid
                             </button>
                           </div>
                         )}

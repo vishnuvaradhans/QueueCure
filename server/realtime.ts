@@ -2,7 +2,7 @@ import { Server } from "socket.io";
 import type { Server as HttpServer } from "node:http";
 import jwt from "jsonwebtoken";
 import { findUserById, type UserRecord } from "./db";
-import { getPatientQueue, listQueue } from "./queue";
+import { getPatientQueue, listPublicQueue, listQueue } from "./queue";
 
 const JWT_SECRET = process.env.JWT_SECRET ?? "queuecure-dev-secret-change-me";
 
@@ -48,11 +48,11 @@ export function setupRealtime(server: HttpServer) {
 
   io.on("connection", (socket) => {
     const user = socket.data.user as UserRecord;
-    socket.join("queue");
+    socket.join(user.role === "PATIENT" ? "queue:patients" : "queue:officials");
     socket.join(`user:${user.id}`);
 
     socket.emit("queue:update", {
-      queue: listQueue(),
+      queue: user.role === "PATIENT" ? listPublicQueue() : listQueue(),
       patient: user.role === "PATIENT" ? getPatientQueue(user) : null,
     });
   });
@@ -66,10 +66,14 @@ export function broadcastQueueUpdate(eventName = "queue_updated") {
   }
 
   const queue = listQueue();
-  const payload = { queue, event: eventName };
+  const publicQueue = listPublicQueue();
+  const officialPayload = { queue, event: eventName };
+  const patientPayload = { queue: publicQueue, event: eventName };
 
-  io.to("queue").emit("queue:update", payload);
-  io.to("queue").emit(eventName, payload);
+  io.to("queue:officials").emit("queue:update", officialPayload);
+  io.to("queue:officials").emit(eventName, officialPayload);
+  io.to("queue:patients").emit("queue:update", patientPayload);
+  io.to("queue:patients").emit(eventName, patientPayload);
 
   queue.forEach((entry) => {
     if (

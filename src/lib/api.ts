@@ -3,7 +3,7 @@ import type {
   FullPatientPayload,
   PatientIntakePayload,
   PatientQueueState,
-  PaymentQrPayload,
+  PatientProfileLookup,
   QueueEntry,
 } from "../types/queue";
 
@@ -54,11 +54,18 @@ export async function registerPatient(
   username: string,
   password: string,
   confirmPassword: string,
+  profile?: {
+    fullName: string;
+    dateOfBirth: string;
+    gender: string;
+    phoneNumber: string;
+    address: string;
+  },
 ) {
   const response = await fetch("/api/auth/register", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ username, password, confirmPassword }),
+    body: JSON.stringify({ username, password, confirmPassword, ...profile }),
   });
 
   return parseResponse<{ user: AuthUser }>(response);
@@ -115,6 +122,14 @@ export async function fetchQueuePatient(token: string, queueEntryId: number) {
   return parseResponse<FullPatientPayload>(response);
 }
 
+export async function fetchPatientProfile(token: string, patientId: string) {
+  const response = await fetch(`/api/patients/${encodeURIComponent(patientId)}`, {
+    headers: authHeaders(token),
+  });
+
+  return parseResponse<PatientProfileLookup>(response);
+}
+
 export async function updateQueuePatient(
   token: string,
   queueEntryId: number,
@@ -165,24 +180,10 @@ export async function removeQueuePatient(token: string, queueEntryId: number) {
   return parseResponse<{ entry: QueueEntry }>(response);
 }
 
-export async function generatePaymentQr(token: string, queueEntryId: number) {
-  const response = await fetch(`/api/queue/${queueEntryId}/payment/qr`, {
+export async function markQueuePaymentPaid(token: string, queueEntryId: number) {
+  const response = await fetch(`/api/queue/${queueEntryId}/payment/paid`, {
     method: "POST",
     headers: authHeaders(token),
-  });
-
-  return parseResponse<PaymentQrPayload>(response);
-}
-
-export async function confirmQueuePayment(
-  token: string,
-  queueEntryId: number,
-  transactionId: string,
-) {
-  const response = await fetch(`/api/queue/${queueEntryId}/payment/confirm`, {
-    method: "POST",
-    headers: authHeaders(token),
-    body: JSON.stringify({ transactionId }),
   });
 
   return parseResponse<{ entry: QueueEntry }>(response);
