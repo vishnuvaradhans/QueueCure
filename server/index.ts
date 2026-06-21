@@ -46,12 +46,18 @@ setupRealtime(server);
 
 app.use(
   cors({
-    origin: [
-      "http://127.0.0.1:5173",
-      "http://localhost:5173",
-      "https://queue-cure-flame.vercel.app",
-      "https://queue-cure-c1qqcb3po-master-minds.vercel.app",
-    ],
+    origin: (origin, callback) => {
+      if (
+        !origin ||
+        origin.includes("vercel.app") ||
+        origin.includes("localhost") ||
+        origin.includes("127.0.0.1")
+      ) {
+        callback(null, true);
+      } else {
+        callback(new Error("Not allowed by CORS"));
+      }
+    },
     credentials: true,
   }),
 );
