@@ -7,7 +7,10 @@ import type {
   QueueEntry,
 } from "../types/queue";
 
+
 const TOKEN_STORAGE_KEY = "queuecure.authToken";
+
+const API_BASE_URL = "https://queuecure-6me4.onrender.com";
 
 type AuthResponse = {
   token: string;
@@ -41,7 +44,7 @@ async function parseResponse<T>(response: Response): Promise<T> {
 }
 
 export async function login(username: string, password: string) {
-  const response = await fetch("/api/auth/login", {
+  const response = await fetch(`${API_BASE_URL}/api/auth/login`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ username, password }),
@@ -62,7 +65,7 @@ export async function registerPatient(
     address: string;
   },
 ) {
-  const response = await fetch("/api/auth/register", {
+  const response = await fetch(`${API_BASE_URL}/api/auth/register`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ username, password, confirmPassword, ...profile }),
@@ -72,7 +75,7 @@ export async function registerPatient(
 }
 
 export async function fetchCurrentUser(token: string) {
-  const response = await fetch("/api/auth/me", {
+  const response = await fetch(`${API_BASE_URL}/api/auth/me`, {
     headers: {
       Authorization: `Bearer ${token}`,
     },
@@ -89,7 +92,7 @@ function authHeaders(token: string) {
 }
 
 export async function fetchOfficialQueue(token: string) {
-  const response = await fetch("/api/queue", {
+  const response = await fetch(`${API_BASE_URL}/api/queue`, {
     headers: authHeaders(token),
   });
 
@@ -97,7 +100,7 @@ export async function fetchOfficialQueue(token: string) {
 }
 
 export async function fetchPatientQueue(token: string) {
-  const response = await fetch("/api/queue/me", {
+  const response = await fetch(`${API_BASE_URL}/api/queue`, {
     headers: authHeaders(token),
   });
 
@@ -105,7 +108,7 @@ export async function fetchPatientQueue(token: string) {
 }
 
 export async function addQueuePatient(token: string, payload: PatientIntakePayload) {
-  const response = await fetch("/api/queue", {
+  const response = await fetch(`${API_BASE_URL}/api/queue`, {
     method: "POST",
     headers: authHeaders(token),
     body: JSON.stringify(payload),
@@ -115,7 +118,7 @@ export async function addQueuePatient(token: string, payload: PatientIntakePaylo
 }
 
 export async function fetchQueuePatient(token: string, queueEntryId: number) {
-  const response = await fetch(`/api/queue/${queueEntryId}/patient`, {
+  const response = await fetch(`${API_BASE_URL}/api/queue/${queueEntryId}/patient`, {
     headers: authHeaders(token),
   });
 
@@ -123,7 +126,7 @@ export async function fetchQueuePatient(token: string, queueEntryId: number) {
 }
 
 export async function fetchPatientProfile(token: string, patientId: string) {
-  const response = await fetch(`/api/patients/${encodeURIComponent(patientId)}`, {
+  const response = await fetch(`${API_BASE_URL}/api/patients/${encodeURIComponent(patientId)}`, {
     headers: authHeaders(token),
   });
 
@@ -135,7 +138,7 @@ export async function updateQueuePatient(
   queueEntryId: number,
   payload: PatientIntakePayload,
 ) {
-  const response = await fetch(`/api/queue/${queueEntryId}`, {
+  const response = await fetch(`${API_BASE_URL}/api/queue/${queueEntryId}`, {
     method: "PUT",
     headers: authHeaders(token),
     body: JSON.stringify(payload),
@@ -145,7 +148,7 @@ export async function updateQueuePatient(
 }
 
 export async function callQueuePatient(token: string, queueEntryId: number) {
-  const response = await fetch(`/api/queue/${queueEntryId}/call`, {
+  const response = await fetch(`${API_BASE_URL}/api/queue/${queueEntryId}/call`, {
     method: "POST",
     headers: authHeaders(token),
   });
@@ -154,7 +157,7 @@ export async function callQueuePatient(token: string, queueEntryId: number) {
 }
 
 export async function callNextQueuePatient(token: string) {
-  const response = await fetch("/api/queue/call-next", {
+  const response = await fetch(`${API_BASE_URL}/api/queue/call-next`, {
     method: "POST",
     headers: authHeaders(token),
   });
@@ -163,7 +166,7 @@ export async function callNextQueuePatient(token: string) {
 }
 
 export async function completeQueuePatient(token: string, queueEntryId: number) {
-  const response = await fetch(`/api/queue/${queueEntryId}/complete`, {
+  const response = await fetch(`${API_BASE_URL}/api/queue/${queueEntryId}/complete`, {
     method: "POST",
     headers: authHeaders(token),
   });
@@ -172,7 +175,7 @@ export async function completeQueuePatient(token: string, queueEntryId: number) 
 }
 
 export async function removeQueuePatient(token: string, queueEntryId: number) {
-  const response = await fetch(`/api/queue/${queueEntryId}`, {
+  const response = await fetch(`${API_BASE_URL}/api/queue/${queueEntryId}`, {
     method: "DELETE",
     headers: authHeaders(token),
   });
@@ -181,7 +184,7 @@ export async function removeQueuePatient(token: string, queueEntryId: number) {
 }
 
 export async function markQueuePaymentPaid(token: string, queueEntryId: number) {
-  const response = await fetch(`/api/queue/${queueEntryId}/payment/paid`, {
+  const response = await fetch(`${API_BASE_URL}/api/queue/${queueEntryId}/payment/paid`, {
     method: "POST",
     headers: authHeaders(token),
   });
