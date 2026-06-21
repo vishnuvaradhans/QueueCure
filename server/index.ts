@@ -50,6 +50,7 @@ app.use(
       "http://127.0.0.1:5173",
       "http://localhost:5173",
       "https://queue-cure-flame.vercel.app",
+      "https://queue-cure-c1qqcb3po-master-minds.vercel.app",
     ],
     credentials: true,
   }),
