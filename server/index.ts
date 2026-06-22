@@ -1,6 +1,7 @@
 import cors from "cors";
 import express from "express";
 import { createServer } from "node:http";
+import "./seed";
 import {
   authResponse,
   authenticate,
