@@ -28,9 +28,15 @@ function resolveUser(token?: string): UserRecord | undefined {
 
 export function setupRealtime(server: HttpServer) {
   io = new Server(server, {
-    cors: {
-      origin: "http://127.0.0.1:5173",
-    },
+  cors: {
+    origin: [
+      "http://127.0.0.1:5173",
+      "http://localhost:5173",
+      "https://queue-cure-flame.vercel.app",
+      "https://queue-cure-cvby4jyeb-master-minds.vercel.app"
+    ],
+    credentials: true,
+  },
   });
 
   io.use((socket, next) => {
